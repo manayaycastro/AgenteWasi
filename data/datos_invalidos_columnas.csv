@@ -1,0 +1,5 @@
+venta_id,fecha,hora,cliente_id,cliente_nombre,producto_id,precio_unitario,descuento,metodo_pago
+VTA-ERROR-001,2026-08-21,09:15:00,CLI-001,Rosa Mendoza,PROD-001,5.20,0.00,EFECTIVO
+VTA-ERROR-002,2026-08-21,10:30:00,CLI-002,José Mendoza,PROD-006,2.00,0.00,YAPE
+VTA-ERROR-003,2026-08-21,11:45:00,CLI-003,María Mendoza,PROD-011,4.50,0.50,PLIN
+VTA-ERROR-004,2026-08-21,12:20:00,CLI-004,Luis Mendoza,PROD-026,1.50,0.00,TARJETA

@@ -1,0 +1,15 @@
+﻿# Microsoft Foundry nuevo
+azure-ai-projects>=2.0.0,<3.0.0
+azure-identity>=1.0.0,<2.0.0
+
+# Modelo y llamadas a funciones
+openai>=2.0.0,<3.0.0
+
+# Configuración local
+python-dotenv>=1.0.0,<2.0.0
+
+# Análisis de datos
+pandas>=2.0.0,<3.0.0
+
+# Pruebas
+pytest>=8.0.0,<10.0.0
