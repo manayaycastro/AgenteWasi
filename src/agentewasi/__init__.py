@@ -73,3 +73,8 @@ __all__.extend(
         "obtener_productos_mas_vendidos",
     ]
 )
+
+
+from .herramientas import detectar_stock_critico
+
+__all__.append("detectar_stock_critico")

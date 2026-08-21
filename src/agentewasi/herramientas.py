@@ -290,3 +290,118 @@ def obtener_productos_mas_vendidos(
         ),
         "sin_datos": False,
     }
+
+
+def detectar_stock_critico(
+    inventario: pd.DataFrame,
+    incluir_normales: bool = False,
+) -> dict[str, object]:
+    """Clasifica el inventario según su nivel de stock."""
+
+    if not isinstance(incluir_normales, bool):
+        raise ValueError(
+            "incluir_normales debe ser un valor booleano."
+        )
+
+    validar_inventario(
+        inventario,
+        "inventario_ejemplo.csv",
+    )
+
+    resultado = inventario.copy()
+
+    resultado["estado_stock"] = "NORMAL"
+
+    condicion_bajo = (
+        (resultado["stock_actual"] > resultado["stock_minimo"])
+        & (
+            resultado["stock_actual"]
+            <= resultado["stock_minimo"] * 1.5
+        )
+    )
+
+    condicion_critico = (
+        (resultado["stock_actual"] > 0)
+        & (
+            resultado["stock_actual"]
+            <= resultado["stock_minimo"]
+        )
+    )
+
+    condicion_agotado = resultado["stock_actual"] == 0
+
+    resultado.loc[condicion_bajo, "estado_stock"] = "BAJO"
+    resultado.loc[condicion_critico, "estado_stock"] = "CRITICO"
+    resultado.loc[condicion_agotado, "estado_stock"] = "AGOTADO"
+
+    resultado["faltante_para_minimo"] = (
+        resultado["stock_minimo"] - resultado["stock_actual"]
+    ).clip(lower=0)
+
+    cantidades = {
+        estado: int(
+            (resultado["estado_stock"] == estado).sum()
+        )
+        for estado in (
+            "AGOTADO",
+            "CRITICO",
+            "BAJO",
+            "NORMAL",
+        )
+    }
+
+    prioridad = {
+        "AGOTADO": 0,
+        "CRITICO": 1,
+        "BAJO": 2,
+        "NORMAL": 3,
+    }
+
+    resultado["_prioridad"] = resultado[
+        "estado_stock"
+    ].map(prioridad)
+
+    resultado["_proporcion_stock"] = (
+        resultado["stock_actual"]
+        / resultado["stock_minimo"]
+    )
+
+    resultado = resultado.sort_values(
+        by=[
+            "_prioridad",
+            "_proporcion_stock",
+            "producto_id",
+        ],
+        ascending=[True, True, True],
+    )
+
+    if not incluir_normales:
+        resultado = resultado[
+            resultado["estado_stock"] != "NORMAL"
+        ]
+
+    columnas_salida = [
+        "producto_id",
+        "producto",
+        "categoria",
+        "stock_actual",
+        "stock_minimo",
+        "estado_stock",
+        "faltante_para_minimo",
+    ]
+
+    productos = resultado[columnas_salida].to_dict(
+        orient="records"
+    )
+
+    return {
+        "total_productos": int(len(inventario)),
+        "total_alertas": int(
+            cantidades["AGOTADO"]
+            + cantidades["CRITICO"]
+            + cantidades["BAJO"]
+        ),
+        "cantidades_por_estado": cantidades,
+        "incluye_normales": incluir_normales,
+        "productos": productos,
+    }

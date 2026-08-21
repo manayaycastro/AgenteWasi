@@ -213,3 +213,157 @@ def test_rechazar_producto_sin_referencia(
             ventas_invalidas,
             inventario_real,
         )
+
+
+from agentewasi.herramientas import detectar_stock_critico
+
+
+def test_detectar_stock_critico_con_inventario_real():
+    raiz = Path(__file__).resolve().parents[1]
+    inventario = cargar_csv(
+        raiz / "data" / "inventario_ejemplo.csv",
+        COLUMNAS_INVENTARIO,
+    )
+
+    resultado = detectar_stock_critico(inventario)
+
+    assert resultado["total_productos"] == 35
+    assert resultado["total_alertas"] == 23
+    assert resultado["incluye_normales"] is False
+    assert len(resultado["productos"]) == 23
+
+    assert resultado["cantidades_por_estado"] == {
+        "AGOTADO": 6,
+        "CRITICO": 8,
+        "BAJO": 9,
+        "NORMAL": 12,
+    }
+
+
+def test_ocultar_productos_normales_por_defecto():
+    raiz = Path(__file__).resolve().parents[1]
+    inventario = cargar_csv(
+        raiz / "data" / "inventario_ejemplo.csv",
+        COLUMNAS_INVENTARIO,
+    )
+
+    resultado = detectar_stock_critico(inventario)
+
+    estados = {
+        producto["estado_stock"]
+        for producto in resultado["productos"]
+    }
+
+    assert "NORMAL" not in estados
+    assert estados == {"AGOTADO", "CRITICO", "BAJO"}
+
+
+def test_incluir_productos_normales():
+    raiz = Path(__file__).resolve().parents[1]
+    inventario = cargar_csv(
+        raiz / "data" / "inventario_ejemplo.csv",
+        COLUMNAS_INVENTARIO,
+    )
+
+    resultado = detectar_stock_critico(
+        inventario,
+        incluir_normales=True,
+    )
+
+    assert resultado["incluye_normales"] is True
+    assert len(resultado["productos"]) == 35
+
+    estados = [
+        producto["estado_stock"]
+        for producto in resultado["productos"]
+    ]
+
+    assert estados.count("NORMAL") == 12
+
+
+def test_ordenar_productos_por_prioridad_de_stock():
+    raiz = Path(__file__).resolve().parents[1]
+    inventario = cargar_csv(
+        raiz / "data" / "inventario_ejemplo.csv",
+        COLUMNAS_INVENTARIO,
+    )
+
+    resultado = detectar_stock_critico(
+        inventario,
+        incluir_normales=True,
+    )
+
+    prioridad = {
+        "AGOTADO": 0,
+        "CRITICO": 1,
+        "BAJO": 2,
+        "NORMAL": 3,
+    }
+
+    prioridades = [
+        prioridad[producto["estado_stock"]]
+        for producto in resultado["productos"]
+    ]
+
+    assert prioridades == sorted(prioridades)
+
+
+def test_clasificar_limites_de_stock():
+    raiz = Path(__file__).resolve().parents[1]
+    inventario = cargar_csv(
+        raiz / "data" / "inventario_ejemplo.csv",
+        COLUMNAS_INVENTARIO,
+    ).copy()
+
+    inventario.loc[0:3, "stock_minimo"] = 10
+    inventario.loc[0:3, "stock_actual"] = [0, 10, 15, 16]
+
+    resultado = detectar_stock_critico(
+        inventario,
+        incluir_normales=True,
+    )
+
+    estados = {
+        producto["producto_id"]: producto["estado_stock"]
+        for producto in resultado["productos"]
+    }
+
+    identificadores = inventario.loc[0:3, "producto_id"].tolist()
+
+    assert estados[identificadores[0]] == "AGOTADO"
+    assert estados[identificadores[1]] == "CRITICO"
+    assert estados[identificadores[2]] == "BAJO"
+    assert estados[identificadores[3]] == "NORMAL"
+
+
+def test_resultado_incluye_codigo_y_nombre_del_producto():
+    raiz = Path(__file__).resolve().parents[1]
+    inventario = cargar_csv(
+        raiz / "data" / "inventario_ejemplo.csv",
+        COLUMNAS_INVENTARIO,
+    )
+
+    resultado = detectar_stock_critico(inventario)
+    producto = resultado["productos"][0]
+
+    assert producto["producto_id"]
+    assert producto["producto"]
+    assert "categoria" in producto
+    assert "estado_stock" in producto
+
+
+def test_rechazar_incluir_normales_no_booleano():
+    raiz = Path(__file__).resolve().parents[1]
+    inventario = cargar_csv(
+        raiz / "data" / "inventario_ejemplo.csv",
+        COLUMNAS_INVENTARIO,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="incluir_normales debe ser un valor booleano",
+    ):
+        detectar_stock_critico(
+            inventario,
+            incluir_normales="sí",
+        )
