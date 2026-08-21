@@ -48,3 +48,69 @@ def test_rechazar_csv_solo_con_encabezados(tmp_path):
 
     with pytest.raises(ErrorCargaCSV, match="no contiene registros"):
         cargar_csv(archivo)
+
+
+def test_validar_columnas_acepta_esquema_completo():
+    import pandas as pd
+
+    from agentewasi import validar_columnas
+
+    datos = pd.DataFrame(
+        {
+            "producto_id": ["PROD-001"],
+            "producto": ["Arroz"],
+            "columna_extra": ["permitida"],
+        }
+    )
+
+    validar_columnas(
+        datos,
+        ("producto_id", "producto"),
+    )
+
+
+def test_validar_columnas_informa_faltantes_ordenados():
+    import pandas as pd
+
+    from agentewasi import ErrorColumnasCSV, validar_columnas
+
+    datos = pd.DataFrame(
+        {
+            "producto": ["Arroz"],
+        }
+    )
+
+    with pytest.raises(
+        ErrorColumnasCSV,
+        match="cantidad, fecha",
+    ):
+        validar_columnas(
+            datos,
+            ("producto", "fecha", "cantidad"),
+            nombre_archivo="ventas.csv",
+        )
+
+
+def test_cargar_ventas_reales_con_esquema():
+    from pathlib import Path
+
+    from agentewasi import COLUMNAS_VENTAS
+
+    raiz = Path(__file__).resolve().parents[1]
+    archivo = raiz / "data" / "ventas_ejemplo.csv"
+
+    datos = cargar_csv(archivo, COLUMNAS_VENTAS)
+
+    assert datos.shape == (10475, 10)
+
+
+def test_rechazar_archivo_real_con_columna_faltante():
+    from pathlib import Path
+
+    from agentewasi import COLUMNAS_VENTAS, ErrorColumnasCSV
+
+    raiz = Path(__file__).resolve().parents[1]
+    archivo = raiz / "data" / "datos_invalidos_columnas.csv"
+
+    with pytest.raises(ErrorColumnasCSV, match="cantidad"):
+        cargar_csv(archivo, COLUMNAS_VENTAS)

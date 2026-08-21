@@ -1,5 +1,6 @@
-﻿"""Carga segura de archivos CSV para AgenteWasi."""
+﻿"""Carga y validación segura de archivos CSV para AgenteWasi."""
 
+from collections.abc import Collection
 from pathlib import Path
 
 import pandas as pd
@@ -10,8 +11,32 @@ class ErrorCargaCSV(ValueError):
     """Error controlado durante la carga de un archivo CSV."""
 
 
-def cargar_csv(ruta: str | Path) -> pd.DataFrame:
-    """Carga un CSV válido y devuelve su contenido como DataFrame."""
+class ErrorColumnasCSV(ErrorCargaCSV):
+    """Error generado cuando faltan columnas obligatorias."""
+
+
+def validar_columnas(
+    datos: pd.DataFrame,
+    columnas_obligatorias: Collection[str],
+    nombre_archivo: str = "archivo CSV",
+) -> None:
+    """Verifica que un DataFrame contenga todas las columnas requeridas."""
+
+    columnas_actuales = set(map(str, datos.columns))
+    faltantes = sorted(set(columnas_obligatorias) - columnas_actuales)
+
+    if faltantes:
+        detalle = ", ".join(faltantes)
+        raise ErrorColumnasCSV(
+            f"Faltan columnas obligatorias en {nombre_archivo}: {detalle}"
+        )
+
+
+def cargar_csv(
+    ruta: str | Path,
+    columnas_obligatorias: Collection[str] | None = None,
+) -> pd.DataFrame:
+    """Carga un CSV válido y opcionalmente verifica sus columnas."""
 
     archivo = Path(ruta)
 
@@ -52,6 +77,13 @@ def cargar_csv(ruta: str | Path) -> pd.DataFrame:
     if datos.empty:
         raise ErrorCargaCSV(
             f"El archivo CSV no contiene registros: {archivo}"
+        )
+
+    if columnas_obligatorias is not None:
+        validar_columnas(
+            datos,
+            columnas_obligatorias,
+            nombre_archivo=archivo.name,
         )
 
     return datos
