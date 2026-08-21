@@ -95,3 +95,121 @@ def test_rechazar_periodo_invertido(ventas_reales):
             fecha_inicio="2026-08-21",
             fecha_fin="2026-08-01",
         )
+
+
+from agentewasi import COLUMNAS_INVENTARIO
+from agentewasi.herramientas import (
+    ErrorReferenciaProducto,
+    obtener_productos_mas_vendidos,
+)
+
+
+@pytest.fixture(scope="module")
+def inventario_real():
+    raiz = Path(__file__).resolve().parents[1]
+    archivo = raiz / "data" / "inventario_ejemplo.csv"
+
+    return cargar_csv(
+        archivo,
+        COLUMNAS_INVENTARIO,
+    )
+
+
+def test_ranking_completo_incluye_codigo_y_nombre(
+    ventas_reales,
+    inventario_real,
+):
+    resultado = obtener_productos_mas_vendidos(
+        ventas_reales,
+        inventario_real,
+        top_n=5,
+    )
+
+    primero_cantidad = resultado["por_cantidad"][0]
+    primero_ingresos = resultado["por_ingresos"][0]
+
+    assert primero_cantidad["producto_id"] == "PROD-031"
+    assert primero_cantidad["producto"] == "Pan francés"
+    assert primero_cantidad["unidades_vendidas"] == 7964
+
+    assert primero_ingresos["producto_id"] == "PROD-003"
+    assert primero_ingresos["producto"] == "Aceite vegetal 1 L"
+    assert primero_ingresos["ingresos"] == pytest.approx(13549.75)
+
+
+def test_ranking_diario_respeta_top_n(
+    ventas_reales,
+    inventario_real,
+):
+    resultado = obtener_productos_mas_vendidos(
+        ventas_reales,
+        inventario_real,
+        top_n=3,
+        fecha_inicio="2026-08-21",
+        fecha_fin="2026-08-21",
+    )
+
+    nombres = [
+        fila["producto"]
+        for fila in resultado["por_cantidad"]
+    ]
+
+    assert nombres == [
+        "Azúcar rubia 1 kg",
+        "Gaseosa cola 500 ml",
+        "Papas fritas 45 g",
+    ]
+    assert len(resultado["por_ingresos"]) == 3
+
+
+def test_ranking_sin_datos_devuelve_listas_vacias(
+    ventas_reales,
+    inventario_real,
+):
+    resultado = obtener_productos_mas_vendidos(
+        ventas_reales,
+        inventario_real,
+        fecha_inicio="2026-09-01",
+        fecha_fin="2026-09-30",
+    )
+
+    assert resultado["por_cantidad"] == []
+    assert resultado["por_ingresos"] == []
+    assert resultado["sin_datos"] is True
+
+
+@pytest.mark.parametrize("top_n", [0, True])
+def test_rechazar_top_n_invalido(
+    ventas_reales,
+    inventario_real,
+    top_n,
+):
+    with pytest.raises(
+        ValueError,
+        match="top_n debe ser un entero mayor que cero",
+    ):
+        obtener_productos_mas_vendidos(
+            ventas_reales,
+            inventario_real,
+            top_n=top_n,
+        )
+
+
+def test_rechazar_producto_sin_referencia(
+    ventas_reales,
+    inventario_real,
+):
+    ventas_invalidas = ventas_reales.copy()
+    ventas_invalidas.loc[
+        ventas_invalidas.index[0],
+        "producto_id",
+    ] = "PROD-999"
+
+    with pytest.raises(
+        ErrorReferenciaProducto,
+        match="PROD-999",
+    ):
+        obtener_productos_mas_vendidos(
+            ventas_invalidas,
+            inventario_real,
+        )

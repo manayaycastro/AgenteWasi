@@ -123,3 +123,170 @@ def calcular_ventas_totales(
         "total_ventas": round(float(total.sum()), 2),
         "sin_datos": False,
     }
+
+
+from .validador_datos import validar_inventario
+
+
+class ErrorReferenciaProducto(ValueError):
+    """Error generado cuando una venta referencia un producto inexistente."""
+
+
+def _convertir_ranking_a_registros(
+    ranking: pd.DataFrame,
+) -> list[dict[str, object]]:
+    """Convierte un ranking en una respuesta serializable."""
+
+    registros: list[dict[str, object]] = []
+
+    for fila in ranking.itertuples(index=False):
+        registros.append(
+            {
+                "producto_id": str(fila.producto_id),
+                "producto": str(fila.producto),
+                "categoria": str(fila.categoria),
+                "unidades_vendidas": int(fila.unidades_vendidas),
+                "ingresos": round(float(fila.ingresos), 2),
+            }
+        )
+
+    return registros
+
+
+def obtener_productos_mas_vendidos(
+    ventas: pd.DataFrame,
+    inventario: pd.DataFrame,
+    top_n: int = 5,
+    fecha_inicio: str | None = None,
+    fecha_fin: str | None = None,
+) -> dict[str, object]:
+    """Obtiene rankings de productos por unidades e ingresos."""
+
+    validar_ventas(ventas, "ventas")
+    validar_inventario(inventario, "inventario")
+
+    if isinstance(top_n, bool) or not isinstance(top_n, int) or top_n <= 0:
+        raise ValueError("top_n debe ser un entero mayor que cero")
+
+    inicio = _convertir_fecha_parametro(
+        fecha_inicio,
+        "fecha_inicio",
+    )
+    fin = _convertir_fecha_parametro(
+        fecha_fin,
+        "fecha_fin",
+    )
+
+    if inicio is not None and fin is not None and inicio > fin:
+        raise ErrorPeriodoVentas(
+            "fecha_inicio no puede ser posterior a fecha_fin"
+        )
+
+    fechas = pd.to_datetime(
+        ventas["fecha"],
+        format="%Y-%m-%d",
+    ).dt.date
+    mascara = pd.Series(True, index=ventas.index)
+
+    if inicio is not None:
+        mascara &= fechas >= inicio
+
+    if fin is not None:
+        mascara &= fechas <= fin
+
+    seleccion = ventas.loc[mascara].copy()
+
+    fecha_inicial_resultado = (
+        fecha_inicio
+        if fecha_inicio is not None
+        else str(ventas["fecha"].min())
+    )
+    fecha_final_resultado = (
+        fecha_fin
+        if fecha_fin is not None
+        else str(ventas["fecha"].max())
+    )
+
+    if seleccion.empty:
+        return {
+            "fecha_inicio": fecha_inicial_resultado,
+            "fecha_fin": fecha_final_resultado,
+            "top_n": top_n,
+            "por_cantidad": [],
+            "por_ingresos": [],
+            "sin_datos": True,
+        }
+
+    productos_ventas = set(seleccion["producto_id"])
+    productos_inventario = set(inventario["producto_id"])
+    faltantes = sorted(
+        productos_ventas - productos_inventario
+    )
+
+    if faltantes:
+        detalle = ", ".join(faltantes)
+        raise ErrorReferenciaProducto(
+            f"Productos de ventas no encontrados en inventario: {detalle}"
+        )
+
+    seleccion["ingresos"] = (
+        seleccion["cantidad"]
+        * seleccion["precio_unitario"]
+        - seleccion["descuento"]
+    )
+
+    resumen = (
+        seleccion.groupby(
+            "producto_id",
+            as_index=False,
+        )
+        .agg(
+            unidades_vendidas=("cantidad", "sum"),
+            ingresos=("ingresos", "sum"),
+        )
+        .merge(
+            inventario[
+                [
+                    "producto_id",
+                    "producto",
+                    "categoria",
+                ]
+            ],
+            on="producto_id",
+            how="left",
+            validate="one_to_one",
+        )
+    )
+
+    resumen["ingresos"] = resumen["ingresos"].round(2)
+
+    por_cantidad = resumen.sort_values(
+        [
+            "unidades_vendidas",
+            "ingresos",
+            "producto_id",
+        ],
+        ascending=[False, False, True],
+    ).head(top_n)
+
+    por_ingresos = resumen.sort_values(
+        [
+            "ingresos",
+            "unidades_vendidas",
+            "producto_id",
+        ],
+        ascending=[False, False, True],
+    ).head(top_n)
+
+    return {
+        "fecha_inicio": fecha_inicial_resultado,
+        "fecha_fin": fecha_final_resultado,
+        "top_n": top_n,
+        "por_cantidad": _convertir_ranking_a_registros(
+            por_cantidad
+        ),
+        "por_ingresos": _convertir_ranking_a_registros(
+            por_ingresos
+        ),
+        "sin_datos": False,
+    }

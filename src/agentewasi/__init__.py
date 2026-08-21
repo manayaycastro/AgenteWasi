@@ -60,3 +60,16 @@ __all__.extend(
         "calcular_ventas_totales",
     ]
 )
+
+
+from .herramientas import (
+    ErrorReferenciaProducto,
+    obtener_productos_mas_vendidos,
+)
+
+__all__.extend(
+    [
+        "ErrorReferenciaProducto",
+        "obtener_productos_mas_vendidos",
+    ]
+)
