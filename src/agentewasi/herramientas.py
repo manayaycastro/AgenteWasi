@@ -405,3 +405,289 @@ def detectar_stock_critico(
         "incluye_normales": incluir_normales,
         "productos": productos,
     }
+
+
+def analizar_ventas_por_periodo(
+    ventas: pd.DataFrame,
+    inventario: pd.DataFrame,
+    fecha_inicio: str | None = None,
+    fecha_fin: str | None = None,
+) -> dict[str, object]:
+    """Analiza las ventas por categoría, método de pago y día."""
+
+    validar_ventas(ventas, "ventas")
+    validar_inventario(inventario, "inventario")
+
+    inicio = _convertir_fecha_parametro(
+        fecha_inicio,
+        "fecha_inicio",
+    )
+    fin = _convertir_fecha_parametro(
+        fecha_fin,
+        "fecha_fin",
+    )
+
+    if inicio is not None and fin is not None and inicio > fin:
+        raise ErrorPeriodoVentas(
+            "fecha_inicio no puede ser posterior a fecha_fin"
+        )
+
+    fechas = pd.to_datetime(
+        ventas["fecha"],
+        format="%Y-%m-%d",
+    ).dt.date
+
+    mascara = pd.Series(True, index=ventas.index)
+
+    if inicio is not None:
+        mascara &= fechas >= inicio
+
+    if fin is not None:
+        mascara &= fechas <= fin
+
+    seleccion = ventas.loc[mascara].copy()
+
+    fecha_inicial_resultado = (
+        fecha_inicio
+        if fecha_inicio is not None
+        else str(ventas["fecha"].min())
+    )
+    fecha_final_resultado = (
+        fecha_fin
+        if fecha_fin is not None
+        else str(ventas["fecha"].max())
+    )
+
+    if seleccion.empty:
+        return {
+            "fecha_inicio": fecha_inicial_resultado,
+            "fecha_fin": fecha_final_resultado,
+            "resumen": {
+                "cantidad_ventas": 0,
+                "cantidad_lineas": 0,
+                "unidades_vendidas": 0,
+                "subtotal_bruto": 0.0,
+                "descuentos": 0.0,
+                "total_ventas": 0.0,
+            },
+            "por_categoria": [],
+            "por_metodo_pago": [],
+            "por_dia": [],
+            "categoria_lider": None,
+            "dia_mayor_venta": None,
+            "sin_datos": True,
+        }
+
+    productos_ventas = set(seleccion["producto_id"])
+    productos_inventario = set(inventario["producto_id"])
+    faltantes = sorted(
+        productos_ventas - productos_inventario
+    )
+
+    if faltantes:
+        detalle = ", ".join(faltantes)
+        raise ErrorReferenciaProducto(
+            "Productos de ventas no encontrados en "
+            f"inventario: {detalle}"
+        )
+
+    seleccion["subtotal_bruto"] = (
+        seleccion["cantidad"]
+        * seleccion["precio_unitario"]
+    )
+    seleccion["total_ventas"] = (
+        seleccion["subtotal_bruto"]
+        - seleccion["descuento"]
+    )
+
+    seleccion = seleccion.merge(
+        inventario[
+            [
+                "producto_id",
+                "producto",
+                "categoria",
+            ]
+        ],
+        on="producto_id",
+        how="left",
+        validate="many_to_one",
+    )
+
+    resumen_categoria = (
+        seleccion.groupby(
+            "categoria",
+            as_index=False,
+        )
+        .agg(
+            cantidad_ventas=("venta_id", "nunique"),
+            unidades_vendidas=("cantidad", "sum"),
+            total_ventas=("total_ventas", "sum"),
+        )
+        .sort_values(
+            [
+                "total_ventas",
+                "unidades_vendidas",
+                "categoria",
+            ],
+            ascending=[False, False, True],
+        )
+    )
+
+    total_periodo = float(
+        seleccion["total_ventas"].sum()
+    )
+
+    categorias: list[dict[str, object]] = []
+
+    for fila in resumen_categoria.itertuples(
+        index=False
+    ):
+        categorias.append(
+            {
+                "categoria": str(fila.categoria),
+                "cantidad_ventas": int(
+                    fila.cantidad_ventas
+                ),
+                "unidades_vendidas": int(
+                    fila.unidades_vendidas
+                ),
+                "total_ventas": round(
+                    float(fila.total_ventas),
+                    2,
+                ),
+                "porcentaje_ventas": round(
+                    float(fila.total_ventas)
+                    / total_periodo
+                    * 100,
+                    2,
+                ),
+            }
+        )
+
+    resumen_pago = (
+        seleccion.groupby(
+            "metodo_pago",
+            as_index=False,
+        )
+        .agg(
+            cantidad_ventas=("venta_id", "nunique"),
+            total_ventas=("total_ventas", "sum"),
+        )
+        .sort_values(
+            [
+                "total_ventas",
+                "metodo_pago",
+            ],
+            ascending=[False, True],
+        )
+    )
+
+    metodos_pago: list[dict[str, object]] = []
+
+    for fila in resumen_pago.itertuples(
+        index=False
+    ):
+        metodos_pago.append(
+            {
+                "metodo_pago": str(fila.metodo_pago),
+                "cantidad_ventas": int(
+                    fila.cantidad_ventas
+                ),
+                "total_ventas": round(
+                    float(fila.total_ventas),
+                    2,
+                ),
+                "porcentaje_ventas": round(
+                    float(fila.total_ventas)
+                    / total_periodo
+                    * 100,
+                    2,
+                ),
+            }
+        )
+
+    resumen_diario = (
+        seleccion.groupby(
+            "fecha",
+            as_index=False,
+        )
+        .agg(
+            cantidad_ventas=("venta_id", "nunique"),
+            unidades_vendidas=("cantidad", "sum"),
+            total_ventas=("total_ventas", "sum"),
+        )
+        .sort_values("fecha")
+    )
+
+    dias: list[dict[str, object]] = []
+
+    for fila in resumen_diario.itertuples(
+        index=False
+    ):
+        dias.append(
+            {
+                "fecha": str(fila.fecha),
+                "cantidad_ventas": int(
+                    fila.cantidad_ventas
+                ),
+                "unidades_vendidas": int(
+                    fila.unidades_vendidas
+                ),
+                "total_ventas": round(
+                    float(fila.total_ventas),
+                    2,
+                ),
+            }
+        )
+
+    mejor_dia = resumen_diario.sort_values(
+        [
+            "total_ventas",
+            "cantidad_ventas",
+            "fecha",
+        ],
+        ascending=[False, False, True],
+    ).iloc[0]
+
+    resumen = {
+        "cantidad_ventas": int(
+            seleccion["venta_id"].nunique()
+        ),
+        "cantidad_lineas": int(len(seleccion)),
+        "unidades_vendidas": int(
+            seleccion["cantidad"].sum()
+        ),
+        "subtotal_bruto": round(
+            float(seleccion["subtotal_bruto"].sum()),
+            2,
+        ),
+        "descuentos": round(
+            float(seleccion["descuento"].sum()),
+            2,
+        ),
+        "total_ventas": round(total_periodo, 2),
+    }
+
+    return {
+        "fecha_inicio": fecha_inicial_resultado,
+        "fecha_fin": fecha_final_resultado,
+        "resumen": resumen,
+        "por_categoria": categorias,
+        "por_metodo_pago": metodos_pago,
+        "por_dia": dias,
+        "categoria_lider": categorias[0],
+        "dia_mayor_venta": {
+            "fecha": str(mejor_dia["fecha"]),
+            "cantidad_ventas": int(
+                mejor_dia["cantidad_ventas"]
+            ),
+            "unidades_vendidas": int(
+                mejor_dia["unidades_vendidas"]
+            ),
+            "total_ventas": round(
+                float(mejor_dia["total_ventas"]),
+                2,
+            ),
+        },
+        "sin_datos": False,
+    }

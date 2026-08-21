@@ -367,3 +367,162 @@ def test_rechazar_incluir_normales_no_booleano():
             inventario,
             incluir_normales="sí",
         )
+
+
+from agentewasi.herramientas import analizar_ventas_por_periodo
+
+
+def _cargar_datos_para_analisis():
+    raiz = Path(__file__).resolve().parents[1]
+
+    ventas = cargar_csv(
+        raiz / "data" / "ventas_ejemplo.csv",
+        COLUMNAS_VENTAS,
+    )
+    inventario = cargar_csv(
+        raiz / "data" / "inventario_ejemplo.csv",
+        COLUMNAS_INVENTARIO,
+    )
+
+    return ventas, inventario
+
+
+def test_analizar_periodo_completo():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = analizar_ventas_por_periodo(
+        ventas,
+        inventario,
+    )
+
+    assert resultado["fecha_inicio"] == "2026-01-01"
+    assert resultado["fecha_fin"] == "2026-08-21"
+    assert resultado["sin_datos"] is False
+
+    assert resultado["resumen"]["cantidad_ventas"] == 4571
+    assert resultado["resumen"]["cantidad_lineas"] == 10475
+    assert resultado["resumen"]["total_ventas"] == 160744.45
+    assert len(resultado["por_dia"]) == 233
+
+    assert resultado["categoria_lider"]["categoria"] == "ABARROTES"
+    assert resultado["categoria_lider"]["total_ventas"] == 40111.48
+
+    assert resultado["dia_mayor_venta"]["fecha"] == "2026-07-17"
+    assert resultado["dia_mayor_venta"]["total_ventas"] == 1224.14
+
+
+def test_analizar_un_solo_dia():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = analizar_ventas_por_periodo(
+        ventas,
+        inventario,
+        fecha_inicio="2026-08-21",
+        fecha_fin="2026-08-21",
+    )
+
+    assert resultado["resumen"]["cantidad_ventas"] == 20
+    assert resultado["resumen"]["cantidad_lineas"] == 50
+    assert resultado["resumen"]["unidades_vendidas"] == 186
+    assert resultado["resumen"]["total_ventas"] == 802.16
+    assert len(resultado["por_dia"]) == 1
+
+    assert resultado["categoria_lider"]["categoria"] == "ABARROTES"
+    assert resultado["categoria_lider"]["total_ventas"] == 190.31
+
+
+def test_desglose_por_metodo_de_pago():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = analizar_ventas_por_periodo(
+        ventas,
+        inventario,
+    )
+
+    metodos = resultado["por_metodo_pago"]
+
+    assert [fila["metodo_pago"] for fila in metodos] == [
+        "EFECTIVO",
+        "YAPE",
+        "PLIN",
+        "TARJETA",
+    ]
+
+    assert metodos[0]["cantidad_ventas"] == 2047
+    assert metodos[0]["total_ventas"] == 71538.67
+    assert metodos[0]["porcentaje_ventas"] == 44.5
+
+
+def test_porcentajes_de_categorias_suman_cien():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = analizar_ventas_por_periodo(
+        ventas,
+        inventario,
+    )
+
+    porcentaje = sum(
+        fila["porcentaje_ventas"]
+        for fila in resultado["por_categoria"]
+    )
+
+    assert porcentaje == pytest.approx(
+        100.0,
+        abs=0.05,
+    )
+
+
+def test_resumen_diario_esta_ordenado():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = analizar_ventas_por_periodo(
+        ventas,
+        inventario,
+    )
+
+    fechas = [
+        fila["fecha"]
+        for fila in resultado["por_dia"]
+    ]
+
+    assert fechas == sorted(fechas)
+    assert fechas[0] == "2026-01-01"
+    assert fechas[-1] == "2026-08-21"
+
+
+def test_periodo_sin_datos_devuelve_listas_vacias():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = analizar_ventas_por_periodo(
+        ventas,
+        inventario,
+        fecha_inicio="2027-01-01",
+        fecha_fin="2027-01-31",
+    )
+
+    assert resultado["sin_datos"] is True
+    assert resultado["resumen"]["total_ventas"] == 0.0
+    assert resultado["por_categoria"] == []
+    assert resultado["por_metodo_pago"] == []
+    assert resultado["por_dia"] == []
+    assert resultado["categoria_lider"] is None
+    assert resultado["dia_mayor_venta"] is None
+
+
+def test_analisis_rechaza_producto_sin_referencia():
+    ventas, inventario = _cargar_datos_para_analisis()
+    ventas_invalidas = ventas.copy()
+
+    ventas_invalidas.loc[
+        ventas_invalidas.index[0],
+        "producto_id",
+    ] = "PROD-999"
+
+    with pytest.raises(
+        ErrorReferenciaProducto,
+        match="PROD-999",
+    ):
+        analizar_ventas_por_periodo(
+            ventas_invalidas,
+            inventario,
+        )

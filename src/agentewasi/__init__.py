@@ -78,3 +78,8 @@ __all__.extend(
 from .herramientas import detectar_stock_critico
 
 __all__.append("detectar_stock_critico")
+
+
+from .herramientas import analizar_ventas_por_periodo
+
+__all__.append("analizar_ventas_por_periodo")
