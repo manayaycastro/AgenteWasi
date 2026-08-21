@@ -47,3 +47,16 @@ __all__ = [
     "validar_valores_permitidos",
     "validar_ventas",
 ]
+
+
+from .herramientas import (
+    ErrorPeriodoVentas,
+    calcular_ventas_totales,
+)
+
+__all__.extend(
+    [
+        "ErrorPeriodoVentas",
+        "calcular_ventas_totales",
+    ]
+)
