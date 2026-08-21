@@ -23,3 +23,43 @@ COLUMNAS_INVENTARIO = (
     "stock_minimo",
     "activo",
 )
+
+
+METODOS_PAGO = frozenset(
+    {
+        "EFECTIVO",
+        "YAPE",
+        "PLIN",
+        "TARJETA",
+    }
+)
+
+CATEGORIAS_PRODUCTO = frozenset(
+    {
+        "ABARROTES",
+        "BEBIDAS",
+        "CUIDADO_PERSONAL",
+        "LACTEOS",
+        "LIMPIEZA",
+        "PANADERIA",
+        "SNACKS",
+    }
+)
+
+UNIDADES_MEDIDA = frozenset(
+    {
+        "UNIDAD",
+        "PAQUETE",
+        "BOTELLA",
+        "BOLSA",
+        "LATA",
+        "CAJA",
+    }
+)
+
+VALORES_BOOLEANOS = frozenset(
+    {
+        "TRUE",
+        "FALSE",
+    }
+)
