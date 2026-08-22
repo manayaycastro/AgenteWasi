@@ -105,3 +105,8 @@ __all__.extend(
         "ejecutar_herramienta_segura",
     ]
 )
+
+
+from .herramientas import detectar_productos_poca_venta
+
+__all__.append("detectar_productos_poca_venta")

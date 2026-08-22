@@ -695,3 +695,174 @@ def test_reposicion_rechaza_producto_sin_referencia():
             ventas_invalidas,
             inventario,
         )
+
+
+from agentewasi.herramientas import detectar_productos_poca_venta
+
+
+def test_detectar_productos_poca_venta_periodo_completo():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = detectar_productos_poca_venta(
+        ventas,
+        inventario,
+    )
+
+    assert resultado["fecha_inicio"] == "2026-01-01"
+    assert resultado["fecha_fin"] == "2026-08-21"
+    assert resultado["dias_periodo"] == 233
+    assert resultado["productos_analizados"] == 35
+    assert resultado["total_alertas"] == 5
+    assert resultado["sin_datos_ventas"] is False
+
+    assert resultado["cantidades_por_estado"] == {
+        "SIN_VENTAS": 2,
+        "POCA_VENTA": 3,
+        "VENTA_ADECUADA": 30,
+    }
+
+
+def test_productos_con_alerta_coinciden_con_referencia():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = detectar_productos_poca_venta(
+        ventas,
+        inventario,
+    )
+
+    identificadores = [
+        producto["producto_id"]
+        for producto in resultado["productos"]
+    ]
+
+    assert identificadores == [
+        "PROD-025",
+        "PROD-035",
+        "PROD-030",
+        "PROD-021",
+        "PROD-024",
+    ]
+
+
+def test_alertas_incluyen_codigo_nombre_y_categoria():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = detectar_productos_poca_venta(
+        ventas,
+        inventario,
+    )
+
+    for producto in resultado["productos"]:
+        assert producto["producto_id"]
+        assert producto["producto"]
+        assert producto["categoria"]
+        assert producto["estado_venta"] in {
+            "SIN_VENTAS",
+            "POCA_VENTA",
+        }
+
+
+def test_deteccion_de_poca_venta_en_un_dia():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = detectar_productos_poca_venta(
+        ventas,
+        inventario,
+        fecha_inicio="2026-08-21",
+        fecha_fin="2026-08-21",
+    )
+
+    assert resultado["dias_periodo"] == 1
+    assert resultado["total_alertas"] == 11
+
+    assert resultado["cantidades_por_estado"] == {
+        "SIN_VENTAS": 11,
+        "POCA_VENTA": 0,
+        "VENTA_ADECUADA": 24,
+    }
+
+
+def test_periodo_sin_ventas_clasifica_productos_activos():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = detectar_productos_poca_venta(
+        ventas,
+        inventario,
+        fecha_inicio="2027-01-01",
+        fecha_fin="2027-01-31",
+    )
+
+    assert resultado["dias_periodo"] == 31
+    assert resultado["sin_datos_ventas"] is True
+    assert resultado["productos_analizados"] == 35
+    assert resultado["total_alertas"] == 35
+
+    assert resultado["cantidades_por_estado"] == {
+        "SIN_VENTAS": 35,
+        "POCA_VENTA": 0,
+        "VENTA_ADECUADA": 0,
+    }
+
+
+def test_umbral_personalizado_detecta_mas_productos():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado_base = detectar_productos_poca_venta(
+        ventas,
+        inventario,
+    )
+
+    resultado_ampliado = detectar_productos_poca_venta(
+        ventas,
+        inventario,
+        umbral_promedio_diario=3.0,
+    )
+
+    assert resultado_ampliado["umbral_promedio_diario"] == 3.0
+    assert (
+        resultado_ampliado["total_alertas"]
+        > resultado_base["total_alertas"]
+    )
+
+
+@pytest.mark.parametrize(
+    "umbral_invalido",
+    [
+        0,
+        True,
+        "1",
+    ],
+)
+def test_rechazar_umbral_invalido(
+    umbral_invalido,
+):
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    with pytest.raises(
+        ValueError,
+        match="debe ser un número mayor que cero",
+    ):
+        detectar_productos_poca_venta(
+            ventas,
+            inventario,
+            umbral_promedio_diario=umbral_invalido,
+        )
+
+
+def test_poca_venta_rechaza_producto_sin_referencia():
+    ventas, inventario = _cargar_datos_para_analisis()
+    ventas_invalidas = ventas.copy()
+
+    ventas_invalidas.loc[
+        ventas_invalidas.index[0],
+        "producto_id",
+    ] = "PROD-999"
+
+    with pytest.raises(
+        ErrorReferenciaProducto,
+        match="PROD-999",
+    ):
+        detectar_productos_poca_venta(
+            ventas_invalidas,
+            inventario,
+        )
