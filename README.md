@@ -1,4 +1,4 @@
-﻿# AgenteWasi
+# AgenteWasi
 
 Agente inteligente desarrollado con Python y Microsoft Foundry para apoyar al propietario de un minimarket en el análisis de ventas, inventario e indicadores de clientes ficticios.
 
@@ -95,11 +95,11 @@ Los códigos y nombres de clientes son ficticios. No se emplean datos personales
 
 ## Estado del proyecto
 
-Actualmente se encuentra en la Fase 3: preparación técnica.
+Actualmente cuenta con herramientas Python, integración con Microsoft Foundry, interfaz CLI y 102 pruebas automatizadas aprobadas.
 
 Se completó la configuración del repositorio, Python, entorno virtual, dependencias, Microsoft Foundry, variables de entorno y licencia.
 
-La siguiente etapa será construir las herramientas Python para cargar, validar y analizar los archivos CSV.
+Las siguientes etapas corresponden a la revisión final del repositorio y la preparación del video demostrativo.
 
 ## Limitaciones
 
@@ -108,3 +108,48 @@ AgenteWasi no realizará predicciones mediante aprendizaje automático, operacio
 ## Licencia
 
 Este proyecto utiliza la licencia MIT. Consulta el archivo `LICENSE`.
+
+## Ejecución
+
+Activar el entorno virtual:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Instalar el proyecto en modo editable:
+
+```powershell
+python -m pip install -e .
+```
+
+Ejecutar la suite automatizada:
+
+```powershell
+python -m pytest -q
+```
+
+Iniciar AgenteWasi:
+
+```powershell
+python -m agentewasi
+```
+
+Para finalizar la conversación, escribir `salir`.
+
+## Preguntas de ejemplo
+
+- ¿Cuánto se vendió el 21 de agosto de 2026?
+- ¿Cuáles fueron los cinco productos más vendidos?
+- ¿Qué productos tienen stock crítico?
+- ¿Qué productos debo reponer?
+- ¿Qué categorías generaron mayores ventas?
+- ¿Quiénes son los clientes con más compras?
+
+## Documentación
+
+- [Arquitectura y flujo](docs/arquitectura.md)
+- [Matriz de pruebas](docs/pruebas.md)
+- [Seguridad, límites y costos](docs/seguridad_limites_costos.md)
+- [Diccionario de datos](docs/diccionario_datos.md)
+- [Ficha del proyecto](docs/ficha_proyecto.md)
