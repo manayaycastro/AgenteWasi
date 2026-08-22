@@ -123,3 +123,24 @@ __all__.extend(
         "analizar_clientes",
     ]
 )
+
+
+from .agente import (
+    AgenteWasi,
+    HERRAMIENTAS_MODELO,
+)
+from .configuracion import (
+    Configuracion,
+    ErrorConfiguracion,
+)
+from .instrucciones import INSTRUCCIONES_SISTEMA
+
+__all__.extend(
+    [
+        "AgenteWasi",
+        "Configuracion",
+        "ErrorConfiguracion",
+        "HERRAMIENTAS_MODELO",
+        "INSTRUCCIONES_SISTEMA",
+    ]
+)
