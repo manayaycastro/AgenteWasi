@@ -1,10 +1,10 @@
 ﻿# Matriz de pruebas de AgenteWasi
 
-**Fecha:** 21 de agosto de 2026  
-**Entorno:** Windows, Python 3.12.10  
-**Modelo:** gpt-4.1-mini  
-**Deployment:** agentewasi-gpt41-mini  
-**Resultado automatizado:** 102 pruebas aprobadas  
+**Fecha:** 21 de agosto de 2026
+**Entorno:** Windows, Python 3.12.10
+**Modelo:** gpt-4.1-mini
+**Deployment:** agentewasi-gpt41-mini
+**Resultado automatizado:** 102 pruebas aprobadas
 
 ## Objetivo
 
