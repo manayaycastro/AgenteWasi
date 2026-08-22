@@ -691,3 +691,467 @@ def analizar_ventas_por_periodo(
         },
         "sin_datos": False,
     }
+
+
+from math import ceil
+
+
+def recomendar_reposicion(
+    ventas: pd.DataFrame,
+    inventario: pd.DataFrame,
+    fecha_inicio: str | None = None,
+    fecha_fin: str | None = None,
+) -> dict[str, object]:
+    """Recomienda cantidades informativas de reposición."""
+
+    validar_ventas(ventas, "ventas")
+    validar_inventario(inventario, "inventario")
+
+    inicio = _convertir_fecha_parametro(
+        fecha_inicio,
+        "fecha_inicio",
+    )
+    fin = _convertir_fecha_parametro(
+        fecha_fin,
+        "fecha_fin",
+    )
+
+    if inicio is not None and fin is not None and inicio > fin:
+        raise ErrorPeriodoVentas(
+            "fecha_inicio no puede ser posterior a fecha_fin"
+        )
+
+    fechas = pd.to_datetime(
+        ventas["fecha"],
+        format="%Y-%m-%d",
+    ).dt.date
+
+    mascara = pd.Series(True, index=ventas.index)
+
+    if inicio is not None:
+        mascara &= fechas >= inicio
+
+    if fin is not None:
+        mascara &= fechas <= fin
+
+    seleccion = ventas.loc[mascara].copy()
+
+    fecha_inicial_resultado = (
+        fecha_inicio
+        if fecha_inicio is not None
+        else str(ventas["fecha"].min())
+    )
+    fecha_final_resultado = (
+        fecha_fin
+        if fecha_fin is not None
+        else str(ventas["fecha"].max())
+    )
+
+    if seleccion.empty:
+        if inicio is not None and fin is not None:
+            dias_periodo = (fin - inicio).days + 1
+        else:
+            dias_periodo = 0
+    else:
+        inicio_efectivo = (
+            inicio
+            if inicio is not None
+            else fechas.loc[seleccion.index].min()
+        )
+        fin_efectivo = (
+            fin
+            if fin is not None
+            else fechas.loc[seleccion.index].max()
+        )
+        dias_periodo = (
+            fin_efectivo - inicio_efectivo
+        ).days + 1
+
+    productos_ventas = set(seleccion["producto_id"])
+    productos_inventario = set(inventario["producto_id"])
+    faltantes = sorted(
+        productos_ventas - productos_inventario
+    )
+
+    if faltantes:
+        detalle = ", ".join(faltantes)
+        raise ErrorReferenciaProducto(
+            "Productos de ventas no encontrados en "
+            f"inventario: {detalle}"
+        )
+
+    unidades = (
+        seleccion.groupby(
+            "producto_id",
+            as_index=False,
+        )
+        .agg(
+            unidades_vendidas=("cantidad", "sum"),
+        )
+    )
+
+    stock = detectar_stock_critico(
+        inventario,
+        incluir_normales=True,
+    )
+
+    estados = pd.DataFrame(stock["productos"])
+
+    resultado = (
+        inventario[
+            [
+                "producto_id",
+                "producto",
+                "categoria",
+                "stock_actual",
+                "stock_minimo",
+            ]
+        ]
+        .merge(
+            estados[
+                [
+                    "producto_id",
+                    "estado_stock",
+                ]
+            ],
+            on="producto_id",
+            how="left",
+            validate="one_to_one",
+        )
+        .merge(
+            unidades,
+            on="producto_id",
+            how="left",
+            validate="one_to_one",
+        )
+    )
+
+    resultado["unidades_vendidas"] = (
+        resultado["unidades_vendidas"]
+        .fillna(0)
+        .astype(int)
+    )
+
+    if dias_periodo > 0:
+        resultado["venta_promedio_diaria"] = (
+            resultado["unidades_vendidas"]
+            / dias_periodo
+        )
+    else:
+        resultado["venta_promedio_diaria"] = 0.0
+
+    resultado = resultado[
+        resultado["estado_stock"].isin(
+            ["AGOTADO", "CRITICO", "BAJO"]
+        )
+    ].copy()
+
+    resultado["stock_objetivo"] = resultado.apply(
+        lambda fila: ceil(
+            max(
+                float(fila["stock_minimo"]) * 2,
+                float(
+                    fila["venta_promedio_diaria"]
+                ) * 7,
+            )
+        ),
+        axis=1,
+    )
+
+    resultado["cantidad_sugerida"] = (
+        resultado["stock_objetivo"]
+        - resultado["stock_actual"]
+    ).clip(lower=0).astype(int)
+
+    prioridad = {
+        "AGOTADO": 0,
+        "CRITICO": 1,
+        "BAJO": 2,
+    }
+
+    resultado["_prioridad"] = resultado[
+        "estado_stock"
+    ].map(prioridad)
+
+    resultado = resultado.sort_values(
+        [
+            "_prioridad",
+            "venta_promedio_diaria",
+            "producto_id",
+        ],
+        ascending=[True, False, True],
+    )
+
+    recomendaciones: list[dict[str, object]] = []
+
+    for fila in resultado.itertuples(index=False):
+        recomendaciones.append(
+            {
+                "producto_id": str(fila.producto_id),
+                "producto": str(fila.producto),
+                "categoria": str(fila.categoria),
+                "estado_stock": str(fila.estado_stock),
+                "stock_actual": int(fila.stock_actual),
+                "stock_minimo": int(fila.stock_minimo),
+                "unidades_vendidas": int(
+                    fila.unidades_vendidas
+                ),
+                "venta_promedio_diaria": round(
+                    float(fila.venta_promedio_diaria),
+                    4,
+                ),
+                "stock_objetivo": int(
+                    fila.stock_objetivo
+                ),
+                "cantidad_sugerida": int(
+                    fila.cantidad_sugerida
+                ),
+            }
+        )
+
+    return {
+        "fecha_inicio": fecha_inicial_resultado,
+        "fecha_fin": fecha_final_resultado,
+        "dias_periodo": int(dias_periodo),
+        "total_recomendaciones": int(
+            len(recomendaciones)
+        ),
+        "sin_datos_ventas": seleccion.empty,
+        "advertencia": (
+            "Recomendación informativa; no genera pedidos "
+            "ni modifica el inventario."
+        ),
+        "productos": recomendaciones,
+    }
+
+
+from math import ceil
+
+
+def recomendar_reposicion(
+    ventas: pd.DataFrame,
+    inventario: pd.DataFrame,
+    fecha_inicio: str | None = None,
+    fecha_fin: str | None = None,
+) -> dict[str, object]:
+    """Recomienda cantidades informativas de reposición."""
+
+    validar_ventas(ventas, "ventas")
+    validar_inventario(inventario, "inventario")
+
+    inicio = _convertir_fecha_parametro(
+        fecha_inicio,
+        "fecha_inicio",
+    )
+    fin = _convertir_fecha_parametro(
+        fecha_fin,
+        "fecha_fin",
+    )
+
+    if inicio is not None and fin is not None and inicio > fin:
+        raise ErrorPeriodoVentas(
+            "fecha_inicio no puede ser posterior a fecha_fin"
+        )
+
+    fechas = pd.to_datetime(
+        ventas["fecha"],
+        format="%Y-%m-%d",
+    ).dt.date
+
+    mascara = pd.Series(True, index=ventas.index)
+
+    if inicio is not None:
+        mascara &= fechas >= inicio
+
+    if fin is not None:
+        mascara &= fechas <= fin
+
+    seleccion = ventas.loc[mascara].copy()
+
+    fecha_inicial_resultado = (
+        fecha_inicio
+        if fecha_inicio is not None
+        else str(ventas["fecha"].min())
+    )
+    fecha_final_resultado = (
+        fecha_fin
+        if fecha_fin is not None
+        else str(ventas["fecha"].max())
+    )
+
+    if seleccion.empty:
+        if inicio is not None and fin is not None:
+            dias_periodo = (fin - inicio).days + 1
+        else:
+            dias_periodo = 0
+    else:
+        inicio_efectivo = (
+            inicio
+            if inicio is not None
+            else fechas.loc[seleccion.index].min()
+        )
+        fin_efectivo = (
+            fin
+            if fin is not None
+            else fechas.loc[seleccion.index].max()
+        )
+        dias_periodo = (
+            fin_efectivo - inicio_efectivo
+        ).days + 1
+
+    productos_ventas = set(seleccion["producto_id"])
+    productos_inventario = set(inventario["producto_id"])
+    faltantes = sorted(
+        productos_ventas - productos_inventario
+    )
+
+    if faltantes:
+        detalle = ", ".join(faltantes)
+        raise ErrorReferenciaProducto(
+            "Productos de ventas no encontrados en "
+            f"inventario: {detalle}"
+        )
+
+    unidades = (
+        seleccion.groupby(
+            "producto_id",
+            as_index=False,
+        )
+        .agg(
+            unidades_vendidas=("cantidad", "sum"),
+        )
+    )
+
+    stock = detectar_stock_critico(
+        inventario,
+        incluir_normales=True,
+    )
+
+    estados = pd.DataFrame(stock["productos"])
+
+    resultado = (
+        inventario[
+            [
+                "producto_id",
+                "producto",
+                "categoria",
+                "stock_actual",
+                "stock_minimo",
+            ]
+        ]
+        .merge(
+            estados[
+                [
+                    "producto_id",
+                    "estado_stock",
+                ]
+            ],
+            on="producto_id",
+            how="left",
+            validate="one_to_one",
+        )
+        .merge(
+            unidades,
+            on="producto_id",
+            how="left",
+            validate="one_to_one",
+        )
+    )
+
+    resultado["unidades_vendidas"] = (
+        resultado["unidades_vendidas"]
+        .fillna(0)
+        .astype(int)
+    )
+
+    if dias_periodo > 0:
+        resultado["venta_promedio_diaria"] = (
+            resultado["unidades_vendidas"]
+            / dias_periodo
+        )
+    else:
+        resultado["venta_promedio_diaria"] = 0.0
+
+    resultado = resultado[
+        resultado["estado_stock"].isin(
+            ["AGOTADO", "CRITICO", "BAJO"]
+        )
+    ].copy()
+
+    resultado["stock_objetivo"] = resultado.apply(
+        lambda fila: ceil(
+            max(
+                float(fila["stock_minimo"]) * 2,
+                float(
+                    fila["venta_promedio_diaria"]
+                ) * 7,
+            )
+        ),
+        axis=1,
+    )
+
+    resultado["cantidad_sugerida"] = (
+        resultado["stock_objetivo"]
+        - resultado["stock_actual"]
+    ).clip(lower=0).astype(int)
+
+    prioridad = {
+        "AGOTADO": 0,
+        "CRITICO": 1,
+        "BAJO": 2,
+    }
+
+    resultado["_prioridad"] = resultado[
+        "estado_stock"
+    ].map(prioridad)
+
+    resultado = resultado.sort_values(
+        [
+            "_prioridad",
+            "venta_promedio_diaria",
+            "producto_id",
+        ],
+        ascending=[True, False, True],
+    )
+
+    recomendaciones: list[dict[str, object]] = []
+
+    for fila in resultado.itertuples(index=False):
+        recomendaciones.append(
+            {
+                "producto_id": str(fila.producto_id),
+                "producto": str(fila.producto),
+                "categoria": str(fila.categoria),
+                "estado_stock": str(fila.estado_stock),
+                "stock_actual": int(fila.stock_actual),
+                "stock_minimo": int(fila.stock_minimo),
+                "unidades_vendidas": int(
+                    fila.unidades_vendidas
+                ),
+                "venta_promedio_diaria": round(
+                    float(fila.venta_promedio_diaria),
+                    4,
+                ),
+                "stock_objetivo": int(
+                    fila.stock_objetivo
+                ),
+                "cantidad_sugerida": int(
+                    fila.cantidad_sugerida
+                ),
+            }
+        )
+
+    return {
+        "fecha_inicio": fecha_inicial_resultado,
+        "fecha_fin": fecha_final_resultado,
+        "dias_periodo": int(dias_periodo),
+        "total_recomendaciones": int(
+            len(recomendaciones)
+        ),
+        "sin_datos_ventas": seleccion.empty,
+        "advertencia": (
+            "Recomendación informativa; no genera pedidos "
+            "ni modifica el inventario."
+        ),
+        "productos": recomendaciones,
+    }

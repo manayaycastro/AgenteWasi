@@ -526,3 +526,172 @@ def test_analisis_rechaza_producto_sin_referencia():
             ventas_invalidas,
             inventario,
         )
+
+
+from agentewasi.herramientas import recomendar_reposicion
+
+
+def test_recomendar_reposicion_periodo_completo():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = recomendar_reposicion(
+        ventas,
+        inventario,
+    )
+
+    assert resultado["fecha_inicio"] == "2026-01-01"
+    assert resultado["fecha_fin"] == "2026-08-21"
+    assert resultado["dias_periodo"] == 233
+    assert resultado["total_recomendaciones"] == 23
+    assert resultado["sin_datos_ventas"] is False
+    assert "no genera pedidos" in resultado["advertencia"]
+
+    primera = resultado["productos"][0]
+
+    assert primera["producto_id"] == "PROD-005"
+    assert primera["producto"] == "Atún en lata 170 g"
+    assert primera["estado_stock"] == "AGOTADO"
+    assert primera["venta_promedio_diaria"] == 3.5451
+    assert primera["stock_objetivo"] == 25
+    assert primera["cantidad_sugerida"] == 25
+
+
+def test_reposicion_incluye_codigo_y_nombre():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = recomendar_reposicion(
+        ventas,
+        inventario,
+    )
+
+    for producto in resultado["productos"]:
+        assert producto["producto_id"]
+        assert producto["producto"]
+        assert producto["categoria"]
+        assert producto["cantidad_sugerida"] >= 0
+
+
+def test_reposicion_critica_de_leche():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = recomendar_reposicion(
+        ventas,
+        inventario,
+    )
+
+    leche = next(
+        producto
+        for producto in resultado["productos"]
+        if producto["producto_id"] == "PROD-011"
+    )
+
+    assert leche["producto"] == "Leche evaporada 400 g"
+    assert leche["estado_stock"] == "CRITICO"
+    assert leche["unidades_vendidas"] == 1979
+    assert leche["venta_promedio_diaria"] == 8.4936
+    assert leche["stock_objetivo"] == 60
+    assert leche["cantidad_sugerida"] == 52
+
+
+def test_reposicion_respeta_prioridad_y_promedio():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = recomendar_reposicion(
+        ventas,
+        inventario,
+    )
+
+    prioridad = {
+        "AGOTADO": 0,
+        "CRITICO": 1,
+        "BAJO": 2,
+    }
+
+    productos = resultado["productos"]
+
+    prioridades = [
+        prioridad[producto["estado_stock"]]
+        for producto in productos
+    ]
+
+    assert prioridades == sorted(prioridades)
+
+    for estado in ("AGOTADO", "CRITICO", "BAJO"):
+        promedios = [
+            producto["venta_promedio_diaria"]
+            for producto in productos
+            if producto["estado_stock"] == estado
+        ]
+
+        assert promedios == sorted(
+            promedios,
+            reverse=True,
+        )
+
+
+def test_recomendar_reposicion_de_un_dia():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = recomendar_reposicion(
+        ventas,
+        inventario,
+        fecha_inicio="2026-08-21",
+        fecha_fin="2026-08-21",
+    )
+
+    assert resultado["dias_periodo"] == 1
+    assert resultado["total_recomendaciones"] == 23
+
+    primera = resultado["productos"][0]
+
+    assert primera["producto_id"] == "PROD-030"
+    assert primera["producto"] == "Maní salado 100 g"
+    assert primera["unidades_vendidas"] == 6
+    assert primera["venta_promedio_diaria"] == 6.0
+    assert primera["stock_objetivo"] == 42
+    assert primera["cantidad_sugerida"] == 42
+
+
+def test_reposicion_sin_ventas_usa_stock_minimo():
+    ventas, inventario = _cargar_datos_para_analisis()
+
+    resultado = recomendar_reposicion(
+        ventas,
+        inventario,
+        fecha_inicio="2027-01-01",
+        fecha_fin="2027-01-31",
+    )
+
+    assert resultado["dias_periodo"] == 31
+    assert resultado["sin_datos_ventas"] is True
+    assert resultado["total_recomendaciones"] == 23
+
+    atun = next(
+        producto
+        for producto in resultado["productos"]
+        if producto["producto_id"] == "PROD-005"
+    )
+
+    assert atun["unidades_vendidas"] == 0
+    assert atun["venta_promedio_diaria"] == 0.0
+    assert atun["stock_objetivo"] == 20
+    assert atun["cantidad_sugerida"] == 20
+
+
+def test_reposicion_rechaza_producto_sin_referencia():
+    ventas, inventario = _cargar_datos_para_analisis()
+    ventas_invalidas = ventas.copy()
+
+    ventas_invalidas.loc[
+        ventas_invalidas.index[0],
+        "producto_id",
+    ] = "PROD-999"
+
+    with pytest.raises(
+        ErrorReferenciaProducto,
+        match="PROD-999",
+    ):
+        recomendar_reposicion(
+            ventas_invalidas,
+            inventario,
+        )
