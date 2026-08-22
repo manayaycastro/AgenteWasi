@@ -52,7 +52,7 @@ def test_registrar_siete_herramientas():
 
 def test_instrucciones_contienen_limites_principales():
     assert "No calcules" in INSTRUCCIONES_SISTEMA
-    assert "no generan pedidos" in INSTRUCCIONES_SISTEMA
+    assert "no generan pedidos" in " ".join(INSTRUCCIONES_SISTEMA.split())
     assert "Responde en español" in INSTRUCCIONES_SISTEMA
     assert "personas reales" in INSTRUCCIONES_SISTEMA
 
@@ -170,3 +170,4 @@ def test_ciclo_modelo_herramienta_respuesta():
     assert len(respuestas_falsas.llamadas) == 2
     assert len(agente.historial) == 2
     assert agente.historial[-1]["role"] == "assistant"
+
