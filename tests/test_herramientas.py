@@ -866,3 +866,125 @@ def test_poca_venta_rechaza_producto_sin_referencia():
             ventas_invalidas,
             inventario,
         )
+
+
+from agentewasi.herramientas import (
+    ErrorReferenciaCliente,
+    analizar_clientes,
+)
+
+
+def test_analizar_clientes_periodo_completo():
+    ventas, _ = _cargar_datos_para_analisis()
+
+    resultado = analizar_clientes(ventas)
+
+    assert resultado["cantidad_clientes"] == 100
+    assert resultado["clientes_recurrentes"] == 100
+    assert resultado["porcentaje_clientes_recurrentes"] == 100.0
+    assert resultado["cantidad_compras"] == 4571
+    assert resultado["gasto_total"] == 160744.45
+    assert resultado["ticket_promedio_general"] == 35.17
+    assert resultado["sin_datos"] is False
+
+
+def test_ranking_clientes_por_compras():
+    ventas, _ = _cargar_datos_para_analisis()
+
+    resultado = analizar_clientes(ventas)
+    cliente = resultado["por_numero_compras"][0]
+
+    assert cliente["cliente_id"] == "CLI-006"
+    assert cliente["cliente_nombre"] == "Carlos Mendoza"
+    assert cliente["numero_compras"] == 125
+    assert cliente["gasto_acumulado"] == 4190.87
+    assert cliente["es_recurrente"] is True
+
+
+def test_ranking_clientes_por_gasto():
+    ventas, _ = _cargar_datos_para_analisis()
+
+    resultado = analizar_clientes(ventas)
+    cliente = resultado["por_gasto_acumulado"][0]
+
+    assert cliente["cliente_id"] == "CLI-006"
+    assert cliente["cliente_nombre"] == "Carlos Mendoza"
+    assert cliente["gasto_acumulado"] == 4190.87
+
+
+def test_indicadores_clientes_de_un_dia():
+    ventas, _ = _cargar_datos_para_analisis()
+
+    resultado = analizar_clientes(
+        ventas,
+        fecha_inicio="2026-08-21",
+        fecha_fin="2026-08-21",
+    )
+
+    assert resultado["cantidad_clientes"] == 17
+    assert resultado["clientes_recurrentes"] == 3
+    assert resultado["porcentaje_clientes_recurrentes"] == 17.65
+    assert resultado["cantidad_compras"] == 20
+    assert resultado["ticket_promedio_general"] == 40.11
+
+    cliente = resultado["por_numero_compras"][0]
+
+    assert cliente["cliente_id"] == "CLI-053"
+    assert cliente["cliente_nombre"] == "Patricia Castro"
+
+
+def test_clientes_periodo_sin_datos():
+    ventas, _ = _cargar_datos_para_analisis()
+
+    resultado = analizar_clientes(
+        ventas,
+        fecha_inicio="2027-01-01",
+        fecha_fin="2027-01-31",
+    )
+
+    assert resultado["sin_datos"] is True
+    assert resultado["cantidad_clientes"] == 0
+    assert resultado["clientes_recurrentes"] == 0
+    assert resultado["porcentaje_clientes_recurrentes"] == 0.0
+    assert resultado["ticket_promedio_general"] == 0.0
+    assert resultado["clientes"] == []
+
+
+@pytest.mark.parametrize(
+    "top_invalido",
+    [
+        0,
+        True,
+    ],
+)
+def test_analizar_clientes_rechaza_top_invalido(
+    top_invalido,
+):
+    ventas, _ = _cargar_datos_para_analisis()
+
+    with pytest.raises(
+        ValueError,
+        match="top_n debe ser un entero mayor que cero",
+    ):
+        analizar_clientes(
+            ventas,
+            top_n=top_invalido,
+        )
+
+
+def test_rechazar_cliente_con_nombres_inconsistentes():
+    ventas, _ = _cargar_datos_para_analisis()
+    ventas_invalidas = ventas.copy()
+
+    cliente_id = ventas_invalidas.iloc[0]["cliente_id"]
+
+    ventas_invalidas.loc[
+        ventas_invalidas.index[0],
+        "cliente_nombre",
+    ] = "Nombre ficticio diferente"
+
+    with pytest.raises(
+        ErrorReferenciaCliente,
+        match=cliente_id,
+    ):
+        analizar_clientes(ventas_invalidas)

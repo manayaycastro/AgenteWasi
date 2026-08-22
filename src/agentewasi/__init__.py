@@ -110,3 +110,16 @@ __all__.extend(
 from .herramientas import detectar_productos_poca_venta
 
 __all__.append("detectar_productos_poca_venta")
+
+
+from .herramientas import (
+    ErrorReferenciaCliente,
+    analizar_clientes,
+)
+
+__all__.extend(
+    [
+        "ErrorReferenciaCliente",
+        "analizar_clientes",
+    ]
+)

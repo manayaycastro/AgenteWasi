@@ -1381,3 +1381,239 @@ def detectar_productos_poca_venta(
         "sin_datos_ventas": seleccion.empty,
         "productos": productos,
     }
+
+
+class ErrorReferenciaCliente(ValueError):
+    """Error cuando un cliente tiene referencias inconsistentes."""
+
+
+def analizar_clientes(
+    ventas: pd.DataFrame,
+    top_n: int = 5,
+    fecha_inicio: str | None = None,
+    fecha_fin: str | None = None,
+) -> dict[str, object]:
+    """Calcula indicadores de clientes ficticios por periodo."""
+
+    validar_ventas(ventas, "ventas")
+
+    if isinstance(top_n, bool) or not isinstance(top_n, int) or top_n <= 0:
+        raise ValueError(
+            "top_n debe ser un entero mayor que cero"
+        )
+
+    inicio = _convertir_fecha_parametro(
+        fecha_inicio,
+        "fecha_inicio",
+    )
+    fin = _convertir_fecha_parametro(
+        fecha_fin,
+        "fecha_fin",
+    )
+
+    if inicio is not None and fin is not None and inicio > fin:
+        raise ErrorPeriodoVentas(
+            "fecha_inicio no puede ser posterior a fecha_fin"
+        )
+
+    fechas = pd.to_datetime(
+        ventas["fecha"],
+        format="%Y-%m-%d",
+    ).dt.date
+
+    mascara = pd.Series(True, index=ventas.index)
+
+    if inicio is not None:
+        mascara &= fechas >= inicio
+
+    if fin is not None:
+        mascara &= fechas <= fin
+
+    seleccion = ventas.loc[mascara].copy()
+
+    fecha_inicial_resultado = (
+        fecha_inicio
+        if fecha_inicio is not None
+        else str(ventas["fecha"].min())
+    )
+    fecha_final_resultado = (
+        fecha_fin
+        if fecha_fin is not None
+        else str(ventas["fecha"].max())
+    )
+
+    if seleccion.empty:
+        return {
+            "fecha_inicio": fecha_inicial_resultado,
+            "fecha_fin": fecha_final_resultado,
+            "top_n": top_n,
+            "cantidad_clientes": 0,
+            "clientes_recurrentes": 0,
+            "porcentaje_clientes_recurrentes": 0.0,
+            "cantidad_compras": 0,
+            "gasto_total": 0.0,
+            "ticket_promedio_general": 0.0,
+            "por_numero_compras": [],
+            "por_gasto_acumulado": [],
+            "clientes": [],
+            "sin_datos": True,
+        }
+
+    nombres_por_cliente = (
+        seleccion.groupby("cliente_id")[
+            "cliente_nombre"
+        ]
+        .nunique()
+    )
+
+    inconsistentes = sorted(
+        nombres_por_cliente[
+            nombres_por_cliente > 1
+        ].index.tolist()
+    )
+
+    if inconsistentes:
+        detalle = ", ".join(inconsistentes)
+        raise ErrorReferenciaCliente(
+            "Clientes con más de un nombre asociado: "
+            f"{detalle}"
+        )
+
+    seleccion["gasto"] = (
+        seleccion["cantidad"]
+        * seleccion["precio_unitario"]
+        - seleccion["descuento"]
+    )
+
+    resumen = (
+        seleccion.groupby(
+            [
+                "cliente_id",
+                "cliente_nombre",
+            ],
+            as_index=False,
+        )
+        .agg(
+            numero_compras=("venta_id", "nunique"),
+            gasto_acumulado=("gasto", "sum"),
+        )
+    )
+
+    resumen["ticket_promedio"] = (
+        resumen["gasto_acumulado"]
+        / resumen["numero_compras"]
+    )
+
+    resumen["es_recurrente"] = (
+        resumen["numero_compras"] >= 2
+    )
+
+    resumen["gasto_acumulado"] = (
+        resumen["gasto_acumulado"].round(2)
+    )
+    resumen["ticket_promedio"] = (
+        resumen["ticket_promedio"].round(2)
+    )
+
+    def convertir_clientes(
+        datos: pd.DataFrame,
+    ) -> list[dict[str, object]]:
+        registros: list[dict[str, object]] = []
+
+        for fila in datos.itertuples(index=False):
+            registros.append(
+                {
+                    "cliente_id": str(fila.cliente_id),
+                    "cliente_nombre": str(
+                        fila.cliente_nombre
+                    ),
+                    "numero_compras": int(
+                        fila.numero_compras
+                    ),
+                    "gasto_acumulado": round(
+                        float(fila.gasto_acumulado),
+                        2,
+                    ),
+                    "ticket_promedio": round(
+                        float(fila.ticket_promedio),
+                        2,
+                    ),
+                    "es_recurrente": bool(
+                        fila.es_recurrente
+                    ),
+                }
+            )
+
+        return registros
+
+    por_compras = resumen.sort_values(
+        [
+            "numero_compras",
+            "gasto_acumulado",
+            "cliente_id",
+        ],
+        ascending=[False, False, True],
+    ).head(top_n)
+
+    por_gasto = resumen.sort_values(
+        [
+            "gasto_acumulado",
+            "numero_compras",
+            "cliente_id",
+        ],
+        ascending=[False, False, True],
+    ).head(top_n)
+
+    todos_clientes = resumen.sort_values(
+        "cliente_id"
+    )
+
+    cantidad_compras = int(
+        seleccion["venta_id"].nunique()
+    )
+    gasto_total = round(
+        float(seleccion["gasto"].sum()),
+        2,
+    )
+    clientes_recurrentes = int(
+        resumen["es_recurrente"].sum()
+    )
+    cantidad_clientes = int(len(resumen))
+
+    porcentaje_recurrentes = round(
+        clientes_recurrentes
+        / cantidad_clientes
+        * 100,
+        2,
+    )
+
+    ticket_promedio_general = round(
+        gasto_total / cantidad_compras,
+        2,
+    )
+
+    return {
+        "fecha_inicio": fecha_inicial_resultado,
+        "fecha_fin": fecha_final_resultado,
+        "top_n": top_n,
+        "cantidad_clientes": cantidad_clientes,
+        "clientes_recurrentes": clientes_recurrentes,
+        "porcentaje_clientes_recurrentes": (
+            porcentaje_recurrentes
+        ),
+        "cantidad_compras": cantidad_compras,
+        "gasto_total": gasto_total,
+        "ticket_promedio_general": (
+            ticket_promedio_general
+        ),
+        "por_numero_compras": convertir_clientes(
+            por_compras
+        ),
+        "por_gasto_acumulado": convertir_clientes(
+            por_gasto
+        ),
+        "clientes": convertir_clientes(
+            todos_clientes
+        ),
+        "sin_datos": False,
+    }
